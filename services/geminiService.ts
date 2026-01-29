@@ -17,8 +17,6 @@ export interface WeatherResponse {
   error?: string;
 }
 
-// --- LLM HELPERS ---
-
 /**
  * Formats the simulation results into a compact JSON string for the LLM.
  */
@@ -50,10 +48,10 @@ const formatDataForPrompt = (result: SimulationResult, params: SimulationParams)
   return JSON.stringify(summary);
 };
 
-// --- MAIN AI ANALYSIS FUNCTION ---
+// --- ANALYSIS FUNCTION (UNCHANGED MODEL) ---
 
 export const analyzeSimulation = async (result: SimulationResult, params: SimulationParams): Promise<string> => {
-  const apiKey = process.env.API_KEY; // Only needed for Gemini Analysis, not weather
+  const apiKey = process.env.API_KEY;
   if (!apiKey) {
     return "<div class='p-4 bg-red-50 text-red-600 rounded-lg border border-red-100 font-mono text-xs'>[SYSTEM ERROR] CRITICAL: Node connectivity failure. API Key not detected.</div>";
   }
@@ -75,8 +73,9 @@ export const analyzeSimulation = async (result: SimulationResult, params: Simula
   `;
 
   try {
+    // Keeping your original model configuration
     const response = await ai.models.generateContent({
-      model: 'gemini-2.0-flash', // Use 'gemini-1.5-flash' if 2.0 is not yet available in your region
+      model: 'gemini-3-flash-preview',
       contents: prompt,
       config: { temperature: 0.2 }
     });
@@ -88,12 +87,10 @@ export const analyzeSimulation = async (result: SimulationResult, params: Simula
   }
 };
 
-// --- OFFLINE FALLBACK DATA (AGRA SPECIFIC) ---
+// --- OFFLINE FALLBACK DATA ---
 
 const generateAgraForecast = () => {
   const today = new Date();
-  
-  // Agra Physics Constants (Feb/March)
   const AGRA_BASE = [
     { dayOffset: 0, condition: "Clear", maxT: 28.5, minT: 12.4, humidBase: 45, cloudProfile: "CLEAR", sunR: 6.72, sunS: 18.25 },
     { dayOffset: 1, condition: "Hazy Sun", maxT: 29.1, minT: 13.1, humidBase: 50, cloudProfile: "HAZY", sunR: 6.70, sunS: 18.27 },
@@ -161,104 +158,47 @@ const getAgraOfflineData = (index: number = 0): WeatherResponse => {
   };
 };
 
-// --- NEW WEATHER FETCHING LOGIC ---
+// --- NEW WEATHER FETCHING LOGIC (OPEN-METEO) ---
 
 /**
- * 1. Open-Meteo (KEYLESS/FREE)
- * Fetches accurate hourly data for Agra coordinates.
- */
-const fetchFromOpenMeteo = async (): Promise<WeatherResponse> => {
-  // Agra Coordinates: 27.1767° N, 78.0081° E
-  const url = "https://api.open-meteo.com/v1/forecast?latitude=27.1767&longitude=78.0081&hourly=temperature_2m,relative_humidity_2m,cloud_cover&daily=sunrise,sunset&timezone=Asia%2FKolkata&forecast_days=1";
-  
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`OpenMeteo Error: ${res.statusText}`);
-  
-  const data = await res.json();
-  const daily = data.daily;
-  
-  // Helper to convert ISO time to decimal hour
-  const getHour = (iso: string) => {
-    const d = new Date(iso);
-    return parseFloat((d.getHours() + d.getMinutes() / 60).toFixed(2));
-  };
-
-  return {
-    hourlyTemp: data.hourly.temperature_2m.slice(0, 24),
-    hourlyHumidity: data.hourly.relative_humidity_2m.slice(0, 24),
-    hourlyCloud: data.hourly.cloud_cover.slice(0, 24),
-    sunriseHour: getHour(daily.sunrise[0]),
-    sunsetHour: getHour(daily.sunset[0]),
-    meta: {
-      date: new Date().toLocaleDateString('en-IN'),
-      source: "Open-Meteo (Free/Live)",
-      lastUpdated: new Date().toLocaleTimeString(),
-      isFallback: false
-    }
-  };
-};
-
-/**
- * 2. WeatherAPI.com (REQUIRES KEY)
- * Optional: Used if you specifically provide WEATHER_API_KEY in .env
- */
-const fetchFromWeatherAPI = async (key: string): Promise<WeatherResponse> => {
-  const url = `https://api.weatherapi.com/v1/forecast.json?key=${key}&q=Agra&days=1&aqi=no&alerts=no`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`WeatherAPI Error: ${res.statusText}`);
-  
-  const data = await res.json();
-  const forecast = data.forecast.forecastday[0];
-  const hours = forecast.hour;
-
-  // Helper to parse "06:34 AM"
-  const parseTimeStr = (timeStr: string): number => {
-    const [time, period] = timeStr.split(' ');
-    let [h, m] = time.split(':').map(Number);
-    if (period === 'PM' && h !== 12) h += 12;
-    if (period === 'AM' && h === 12) h = 0;
-    return parseFloat((h + m / 60).toFixed(2));
-  };
-
-  return {
-    hourlyTemp: hours.map((h: any) => h.temp_c),
-    hourlyHumidity: hours.map((h: any) => h.humidity),
-    hourlyCloud: hours.map((h: any) => h.cloud),
-    sunriseHour: parseTimeStr(forecast.astro.sunrise),
-    sunsetHour: parseTimeStr(forecast.astro.sunset),
-    meta: {
-      date: data.location.localtime.split(' ')[0],
-      source: "WeatherAPI.com (Live)",
-      lastUpdated: new Date().toLocaleTimeString(),
-      isFallback: false
-    }
-  };
-};
-
-/**
- * MAIN EXPORTED FUNCTION
- * Priority Order:
- * 1. WeatherAPI (Only if you added the key)
- * 2. Open-Meteo (Default - Best Free Option, No Key)
- * 3. Offline Data (Safety Fallback)
+ * Fetches accurate hourly data for Agra (27.18°N, 78.01°E) from Open-Meteo.
+ * NO API KEY REQUIRED.
  */
 export const fetchHourlyWeather = async (): Promise<WeatherResponse> => {
-  const weatherKey = process.env.WEATHER_API_KEY;
-
   try {
-    // Priority 1: WeatherAPI (if configured)
-    if (weatherKey) {
-      return await fetchFromWeatherAPI(weatherKey);
-    }
+    // Open-Meteo API URL for Agra
+    const url = "https://api.open-meteo.com/v1/forecast?latitude=27.1767&longitude=78.0081&hourly=temperature_2m,relative_humidity_2m,cloud_cover&daily=sunrise,sunset&timezone=Asia%2FKolkata&forecast_days=1";
+    
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`OpenMeteo Error: ${res.statusText}`);
+    
+    const data = await res.json();
+    const daily = data.daily;
+    
+    // Helper to convert ISO time to decimal hour (e.g., 6.5)
+    const getHour = (iso: string) => {
+      const d = new Date(iso);
+      return parseFloat((d.getHours() + d.getMinutes() / 60).toFixed(2));
+    };
 
-    // Priority 2: Open-Meteo (No Key Needed)
-    // console.log("Fetching from Open-Meteo...");
-    return await fetchFromOpenMeteo();
+    return {
+      hourlyTemp: data.hourly.temperature_2m.slice(0, 24),
+      hourlyHumidity: data.hourly.relative_humidity_2m.slice(0, 24),
+      hourlyCloud: data.hourly.cloud_cover.slice(0, 24),
+      sunriseHour: getHour(daily.sunrise[0]),
+      sunsetHour: getHour(daily.sunset[0]),
+      meta: {
+        date: new Date().toLocaleDateString('en-IN'),
+        source: "Open-Meteo (Free/Live)",
+        lastUpdated: new Date().toLocaleTimeString(),
+        isFallback: false
+      }
+    };
 
   } catch (error) {
     console.warn("Weather Fetch Warning:", error);
     
-    // Priority 3: Offline Database
+    // Fallback to Offline Database if Open-Meteo fails
     return { 
       ...getAgraOfflineData(0), 
       error: error instanceof Error ? error.message : "Fetch Failed" 
