@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { SimulationParams, SystemScenario, SystemStrategy } from '../types';
-import { Sun, Battery, Clock, Loader2, Settings2, TrendingUp, Sparkles, Plus, Trash2, ShieldX, PowerOff, Fuel, ScanLine, ShieldAlert, ArrowUpFromLine, Wand2, ShieldCheck, Calendar } from 'lucide-react';
+import { Sun, Battery, Clock, Loader2, Settings2, TrendingUp, Sparkles, Plus, Trash2, ShieldX, PowerOff, Fuel, ScanLine, ShieldAlert, ArrowUpFromLine, Wand2, ShieldCheck, Calendar, RefreshCw, Signal, Globe, CheckCircle2, Database } from 'lucide-react';
 import { fetchHourlyWeather } from '../services/geminiService';
 import { ComposedChart, Line, Area, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 
@@ -11,6 +11,17 @@ interface Props {
 
 const InputPanel: React.FC<Props> = ({ params, onChange }) => {
   const [isAutoSyncing, setIsAutoSyncing] = useState(false);
+  const [weatherMeta, setWeatherMeta] = useState<{
+    date: string;
+    source: string;
+    time: string;
+    status: 'IDLE' | 'LIVE' | 'OFFLINE';
+  }>({
+    date: new Date().toLocaleDateString('en-IN', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' }),
+    source: 'System Preset',
+    time: '--:--',
+    status: 'IDLE'
+  });
 
   const handleChange = (field: keyof SimulationParams, value: any) => {
     onChange({ ...params, [field]: value });
@@ -19,16 +30,14 @@ const InputPanel: React.FC<Props> = ({ params, onChange }) => {
   const handleAutoSync = async () => {
     setIsAutoSyncing(true);
     try {
-      // Single API request to fetch all weather parameters
       const data = await fetchHourlyWeather();
       
-      if (data.isFallback) {
-        // Subtle warning in console or toast-like behavior preferred, but using alert for critical fallback per earlier patterns
-        // We suppress the alert if it's just a normal fallback to avoid annoyance, 
-        // but since the user asked for "fetch only once", knowing if it failed might be useful.
-        // However, the requirement "if something cant be fetched then get it from presaved" implies seamless failover.
-        console.warn(`Weather Sync: API Unavailable (${data.error}). Used fallback data.`);
-      }
+      setWeatherMeta({
+        date: data.meta.date,
+        source: data.meta.source,
+        time: data.meta.lastUpdated,
+        status: data.meta.isFallback ? 'OFFLINE' : 'LIVE'
+      });
 
       onChange({
         ...params,
@@ -187,18 +196,45 @@ const InputPanel: React.FC<Props> = ({ params, onChange }) => {
       {/* CENTER: WEATHER MONITOR ONLY (Col Span 6) */}
       <div className="xl:col-span-6 eng-card p-0 flex flex-col h-full overflow-hidden">
         <div className="p-4 border-b border-brand-border flex justify-between items-center bg-slate-50 shrink-0">
-          <h2 className="text-[11px] font-bold text-brand-primary uppercase tracking-widest flex items-center gap-2">
-            <ScanLine size={14} /> Weather Monitor
-          </h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-[11px] font-bold text-brand-primary uppercase tracking-widest flex items-center gap-2">
+              <ScanLine size={14} /> Weather Monitor
+            </h2>
+            {/* Status Pill */}
+            {weatherMeta.status !== 'IDLE' && (
+              <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border flex items-center gap-1 uppercase ${
+                weatherMeta.status === 'LIVE' 
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                  : 'bg-amber-50 text-amber-700 border-amber-200'
+              }`}>
+                {weatherMeta.status === 'LIVE' ? <Globe size={8} /> : <Database size={8} />}
+                {weatherMeta.status === 'LIVE' ? 'LIVE' : 'OFFLINE'}
+              </span>
+            )}
+          </div>
           
-          <button 
-            onClick={handleAutoSync} 
-            disabled={isAutoSyncing}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-white border border-brand-border hover:border-brand-primary hover:text-brand-primary transition-all text-[9px] font-bold text-brand-text-dim disabled:opacity-50 h-[28px]"
-          >
-            {isAutoSyncing ? <Loader2 size={12} className="animate-spin" /> : <Wand2 size={12} />}
-            AUTO SYNC
-          </button>
+          <div className="flex items-center gap-3">
+             {/* Data Metadata Display */}
+             <div className="flex flex-col items-end mr-2">
+               <span className="text-[10px] font-bold text-brand-text uppercase tracking-wide">
+                 {weatherMeta.date}
+               </span>
+               <div className="flex items-center gap-2 text-[9px] font-medium text-brand-text-dim">
+                  <span className="truncate max-w-[120px] text-right">{weatherMeta.source}</span>
+                  <span className="text-slate-300">|</span>
+                  <span>UPD: {weatherMeta.time}</span>
+               </div>
+             </div>
+
+             <button 
+                onClick={handleAutoSync} 
+                disabled={isAutoSyncing}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-white border border-brand-border hover:border-brand-primary hover:text-brand-primary transition-all text-[9px] font-bold text-brand-text-dim disabled:opacity-50 h-[28px] shadow-sm"
+              >
+                {isAutoSyncing ? <Loader2 size={12} className="animate-spin" /> : <Wand2 size={12} />}
+                AUTO SYNC
+             </button>
+          </div>
         </div>
         
         <div className="p-6 flex flex-col gap-6 flex-grow">
