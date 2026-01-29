@@ -23,6 +23,7 @@ const fileToGenerativePart = async (file: File): Promise<{ inlineData: { data: s
 };
 
 export const parseWeatherGraph = async (file: File): Promise<ScannedWeatherData> => {
+  // Use the main Gemini API Key (for Vision/LLM tasks)
   const apiKey = process.env.API_KEY;
   if (!apiKey) {
     console.error("Vision Scanner: API Key missing.");
@@ -33,19 +34,26 @@ export const parseWeatherGraph = async (file: File): Promise<ScannedWeatherData>
   
   try {
     const imagePart = await fileToGenerativePart(file);
+    
+    // Improved Prompt: Explicitly asks for interpolation if data points are sparse
     const prompt = `
-      Analyze this weather graph/chart. 
-      I need 24 hourly data points (00:00 to 23:00) for:
-      1. Temperature (Celsius)
-      2. Humidity (%)
-      3. Cloud Cover (%) (If not shown, assume 0)
+      **Role:** Expert Meteorological Data Analyst.
+      **Task:** Extract hourly weather data from this graph/chart for a 24-hour period (00:00 to 23:00).
+      
+      **Requirements:**
+      1. **Temperature (°C):** Trace the temperature curve carefully.
+      2. **Humidity (%):** Trace the humidity curve.
+      3. **Cloud Cover (%):** Look for cloud icons, bars, or a specific curve. If NO cloud data is visible, return an array of zeros.
+      
+      **Critical:** If the graph only shows points every few hours (e.g. 3h, 6h), **INTERPOLATE linearly** to generate exactly 24 hourly data points.
 
+      **Output:**
       Return a raw JSON object with keys: "hourlyTemp", "hourlyHumidity", "hourlyCloud".
       Each must be an array of exactly 24 numbers.
     `;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-2.0-flash', // Updated to latest stable vision model
       contents: {
         parts: [imagePart, { text: prompt }]
       },
@@ -63,7 +71,8 @@ export const parseWeatherGraph = async (file: File): Promise<ScannedWeatherData>
       }
     });
 
-    if (!response.text) throw new Error("Vision parser returned no content.");
+    if (!response || !response.text) throw new Error("Vision parser returned no content.");
+    
     const data = JSON.parse(response.text);
 
     return {
@@ -82,12 +91,17 @@ export const parseWeatherGraph = async (file: File): Promise<ScannedWeatherData>
 const normalizeArray = (arr: any[], fillValue: number): number[] => {
   if (!Array.isArray(arr)) return Array(24).fill(fillValue);
   const result = [...arr];
-  // Fill if short
+  
+  // Fill if short (pad with last known value)
   while (result.length < 24) {
     result.push(result[result.length - 1] ?? fillValue);
   }
-  // Trim if long
-  return result.slice(0, 24).map(n => Number(n) || fillValue);
+  
+  // Trim if long and ensure numbers
+  return result.slice(0, 24).map(n => {
+    const num = Number(n);
+    return isNaN(num) ? fillValue : num;
+  });
 };
 
 const createFallbackProfile = (): ScannedWeatherData => ({
