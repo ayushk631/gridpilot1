@@ -2,7 +2,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { SimulationResult, SimulationParams } from "../types";
 
 // --- TYPES ---
-interface WeatherResponse {
+export interface WeatherResponse {
   hourlyTemp: number[];
   hourlyHumidity: number[];
   hourlyCloud: number[];
@@ -16,6 +16,8 @@ interface WeatherResponse {
   };
   error?: string;
 }
+
+// --- LLM HELPERS ---
 
 /**
  * Formats the simulation results into a compact JSON string for the LLM.
@@ -48,8 +50,10 @@ const formatDataForPrompt = (result: SimulationResult, params: SimulationParams)
   return JSON.stringify(summary);
 };
 
+// --- MAIN AI ANALYSIS FUNCTION ---
+
 export const analyzeSimulation = async (result: SimulationResult, params: SimulationParams): Promise<string> => {
-  const apiKey = process.env.API_KEY;
+  const apiKey = process.env.API_KEY; // Only needed for Gemini Analysis, not weather
   if (!apiKey) {
     return "<div class='p-4 bg-red-50 text-red-600 rounded-lg border border-red-100 font-mono text-xs'>[SYSTEM ERROR] CRITICAL: Node connectivity failure. API Key not detected.</div>";
   }
@@ -72,7 +76,7 @@ export const analyzeSimulation = async (result: SimulationResult, params: Simula
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-2.0-flash', // Use 'gemini-1.5-flash' if 2.0 is not yet available in your region
       contents: prompt,
       config: { temperature: 0.2 }
     });
@@ -84,17 +88,12 @@ export const analyzeSimulation = async (result: SimulationResult, params: Simula
   }
 };
 
-/**
- * 10-DAY FORECAST DATA FOR AGRA, INDIA
- * Realistic baseline values for Agra (Feb-March context).
- * Stored in code as requested.
- */
+// --- OFFLINE FALLBACK DATA (AGRA SPECIFIC) ---
+
 const generateAgraForecast = () => {
   const today = new Date();
   
   // Agra Physics Constants (Feb/March)
-  // Sunrise approx 6:40 AM - 6:50 AM
-  // Sunset approx 6:10 PM - 6:20 PM
   const AGRA_BASE = [
     { dayOffset: 0, condition: "Clear", maxT: 28.5, minT: 12.4, humidBase: 45, cloudProfile: "CLEAR", sunR: 6.72, sunS: 18.25 },
     { dayOffset: 1, condition: "Hazy Sun", maxT: 29.1, minT: 13.1, humidBase: 50, cloudProfile: "HAZY", sunR: 6.70, sunS: 18.27 },
@@ -117,12 +116,9 @@ const generateAgraForecast = () => {
 
 const getAgraOfflineData = (index: number = 0): WeatherResponse => {
   const forecast = generateAgraForecast();
-  const profile = forecast[index] || forecast[0]; // Default to today
+  const profile = forecast[index] || forecast[0];
 
-  // Generate Hourly Curves based on Physics limits
   const hourlyTemp = Array.from({ length: 24 }, (_, h) => {
-    // Sinusoidal diurnal cycle for Agra
-    // Min temp at 5 AM, Max temp at 3 PM (15:00)
     const t = h;
     const weight = (1 - Math.cos((t - 5) * 2 * Math.PI / 24)) / 2;
     const temp = profile.minT + (profile.maxT - profile.minT) * weight;
@@ -130,33 +126,23 @@ const getAgraOfflineData = (index: number = 0): WeatherResponse => {
   });
 
   const hourlyHumidity = hourlyTemp.map(t => {
-    // Inverse relationship to temp
     const factor = (t - profile.minT) / (profile.maxT - profile.minT);
     const h = profile.humidBase + 30 * (1 - factor); 
     return Math.max(10, Math.min(95, parseFloat(h.toFixed(1))));
   });
 
   const hourlyCloud = Array.from({ length: 24 }, (_, h) => {
-    // Refined Cloud Profiles
     let cloud = 0;
-    
-    if (profile.cloudProfile === "CLEAR") {
-       cloud = Math.random() * 5; // 0-5% noise
-    } else if (profile.cloudProfile === "HAZY") {
-       cloud = 10 + (Math.random() * 10); // 10-20% flat
-    } else if (profile.cloudProfile === "OVERCAST") {
-       cloud = 70 + (Math.random() * 20); // 70-90%
-    } else if (profile.cloudProfile === "AFTERNOON_BUILDUP") {
-       // Clear morning, buildup in afternoon (12PM - 6PM), clear night
+    if (profile.cloudProfile === "CLEAR") cloud = Math.random() * 5;
+    else if (profile.cloudProfile === "HAZY") cloud = 10 + (Math.random() * 10);
+    else if (profile.cloudProfile === "OVERCAST") cloud = 70 + (Math.random() * 20);
+    else if (profile.cloudProfile === "AFTERNOON_BUILDUP") {
        if (h >= 12 && h <= 18) {
-          const peak = 15; // 3 PM
+          const peak = 15;
           const dist = Math.abs(h - peak);
           cloud = 40 * (1 - dist/4) + (Math.random() * 15);
-       } else {
-          cloud = Math.random() * 10;
-       }
+       } else cloud = Math.random() * 10;
     }
-    
     return Math.max(0, Math.min(100, parseFloat(cloud.toFixed(1))));
   });
 
@@ -175,93 +161,107 @@ const getAgraOfflineData = (index: number = 0): WeatherResponse => {
   };
 };
 
+// --- NEW WEATHER FETCHING LOGIC ---
+
 /**
- * Fetch Hourly Weather - Priorities:
- * 1. Live API (Google Search Grounded)
- * 2. Fallback to Hardcoded Agra Database
+ * 1. Open-Meteo (KEYLESS/FREE)
+ * Fetches accurate hourly data for Agra coordinates.
+ */
+const fetchFromOpenMeteo = async (): Promise<WeatherResponse> => {
+  // Agra Coordinates: 27.1767° N, 78.0081° E
+  const url = "https://api.open-meteo.com/v1/forecast?latitude=27.1767&longitude=78.0081&hourly=temperature_2m,relative_humidity_2m,cloud_cover&daily=sunrise,sunset&timezone=Asia%2FKolkata&forecast_days=1";
+  
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`OpenMeteo Error: ${res.statusText}`);
+  
+  const data = await res.json();
+  const daily = data.daily;
+  
+  // Helper to convert ISO time to decimal hour
+  const getHour = (iso: string) => {
+    const d = new Date(iso);
+    return parseFloat((d.getHours() + d.getMinutes() / 60).toFixed(2));
+  };
+
+  return {
+    hourlyTemp: data.hourly.temperature_2m.slice(0, 24),
+    hourlyHumidity: data.hourly.relative_humidity_2m.slice(0, 24),
+    hourlyCloud: data.hourly.cloud_cover.slice(0, 24),
+    sunriseHour: getHour(daily.sunrise[0]),
+    sunsetHour: getHour(daily.sunset[0]),
+    meta: {
+      date: new Date().toLocaleDateString('en-IN'),
+      source: "Open-Meteo (Free/Live)",
+      lastUpdated: new Date().toLocaleTimeString(),
+      isFallback: false
+    }
+  };
+};
+
+/**
+ * 2. WeatherAPI.com (REQUIRES KEY)
+ * Optional: Used if you specifically provide WEATHER_API_KEY in .env
+ */
+const fetchFromWeatherAPI = async (key: string): Promise<WeatherResponse> => {
+  const url = `https://api.weatherapi.com/v1/forecast.json?key=${key}&q=Agra&days=1&aqi=no&alerts=no`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`WeatherAPI Error: ${res.statusText}`);
+  
+  const data = await res.json();
+  const forecast = data.forecast.forecastday[0];
+  const hours = forecast.hour;
+
+  // Helper to parse "06:34 AM"
+  const parseTimeStr = (timeStr: string): number => {
+    const [time, period] = timeStr.split(' ');
+    let [h, m] = time.split(':').map(Number);
+    if (period === 'PM' && h !== 12) h += 12;
+    if (period === 'AM' && h === 12) h = 0;
+    return parseFloat((h + m / 60).toFixed(2));
+  };
+
+  return {
+    hourlyTemp: hours.map((h: any) => h.temp_c),
+    hourlyHumidity: hours.map((h: any) => h.humidity),
+    hourlyCloud: hours.map((h: any) => h.cloud),
+    sunriseHour: parseTimeStr(forecast.astro.sunrise),
+    sunsetHour: parseTimeStr(forecast.astro.sunset),
+    meta: {
+      date: data.location.localtime.split(' ')[0],
+      source: "WeatherAPI.com (Live)",
+      lastUpdated: new Date().toLocaleTimeString(),
+      isFallback: false
+    }
+  };
+};
+
+/**
+ * MAIN EXPORTED FUNCTION
+ * Priority Order:
+ * 1. WeatherAPI (Only if you added the key)
+ * 2. Open-Meteo (Default - Best Free Option, No Key)
+ * 3. Offline Data (Safety Fallback)
  */
 export const fetchHourlyWeather = async (): Promise<WeatherResponse> => {
-  const apiKey = process.env.API_KEY;
-  if (!apiKey) return getAgraOfflineData(0);
-
-  const ai = new GoogleGenAI({ apiKey });
-  const todayStr = new Date().toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  const weatherKey = process.env.WEATHER_API_KEY;
 
   try {
-    // Enhanced Prompt: Target detailed tables specifically for Cloud Cover
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: `
-        Task: Retrieve the COMPLETE hourly weather telemetry for **Agra, Uttar Pradesh, India** for today (${todayStr}).
-        
-        **SEARCH ACTION**:
-        Search specifically for: "Agra hourly weather forecast cloud cover meteoblue timeanddate weather.com".
-        
-        **DATA EXTRACTION (24 Hour Resolution Required):**
-        1. **Temperature (°C)**: Extract the hourly temperature trend.
-        2. **Cloud Cover (%)**: **CRITICAL**
-           - Find the specific "% Cloud Cover" or "Sky Cover" column in hourly tables.
-           - Sources like Meteoblue or TimeAndDate often have this.
-           - If explicit % is missing, you MUST map text to: Clear=0%, Sunny=5%, Partly Cloudy=40%, Mostly Cloudy=75%, Overcast=100%.
-           - **DO NOT return a flat 0% array** unless it is truly a perfectly clear day.
-        3. **Humidity (%)**: Extract hourly humidity.
-        4. **Sunrise/Sunset**: Precise times for today in Agra.
-
-        **OUTPUT**:
-        Return a single JSON object with arrays of length 24 (one for each hour 00:00-23:00).
-      `,
-      config: {
-        tools: [{ googleSearch: {} }], // Enable Search Tool
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            hourlyTemp: { type: Type.ARRAY, items: { type: Type.NUMBER } },
-            hourlyHumidity: { type: Type.ARRAY, items: { type: Type.NUMBER } },
-            hourlyCloud: { type: Type.ARRAY, items: { type: Type.NUMBER } },
-            sunriseHour: { type: Type.NUMBER, description: "Decimal hour (e.g. 6.7)" },
-            sunsetHour: { type: Type.NUMBER, description: "Decimal hour (e.g. 18.2)" },
-            sourceName: { type: Type.STRING, description: "The specific website or source found (e.g. 'Meteoblue', 'Weather.com')" }
-          },
-          required: ["hourlyTemp", "hourlyHumidity", "hourlyCloud", "sunriseHour", "sunsetHour", "sourceName"]
-        }
-      }
-    });
-
-    if (response.text) {
-      const data = JSON.parse(response.text);
-      if (data.hourlyTemp && data.hourlyTemp.length === 24) {
-         
-         // Extract source from grounding metadata if available, else use model's string
-         let source = data.sourceName || "Google Weather / Gemini Live";
-         if (response.candidates?.[0]?.groundingMetadata?.groundingChunks) {
-            const chunks = response.candidates[0].groundingMetadata.groundingChunks;
-            const webSource = chunks.find((c: any) => c.web?.title);
-            if (webSource) source = webSource.web.title;
-         }
-
-         return {
-           hourlyTemp: data.hourlyTemp,
-           hourlyHumidity: data.hourlyHumidity,
-           hourlyCloud: data.hourlyCloud,
-           sunriseHour: data.sunriseHour,
-           sunsetHour: data.sunsetHour,
-           meta: {
-             date: todayStr,
-             source: source.substring(0, 30), 
-             lastUpdated: new Date().toLocaleTimeString(),
-             isFallback: false
-           }
-         };
-      }
+    // Priority 1: WeatherAPI (if configured)
+    if (weatherKey) {
+      return await fetchFromWeatherAPI(weatherKey);
     }
-    throw new Error("Invalid API Data Structure");
 
-  } catch (error: any) {
-    console.warn("Weather API Failed, using Agra Offline DB:", error);
+    // Priority 2: Open-Meteo (No Key Needed)
+    // console.log("Fetching from Open-Meteo...");
+    return await fetchFromOpenMeteo();
+
+  } catch (error) {
+    console.warn("Weather Fetch Warning:", error);
+    
+    // Priority 3: Offline Database
     return { 
       ...getAgraOfflineData(0), 
-      error: error.message || "API Error" 
+      error: error instanceof Error ? error.message : "Fetch Failed" 
     };
   }
 };
