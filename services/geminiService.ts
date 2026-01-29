@@ -188,27 +188,27 @@ export const fetchHourlyWeather = async (): Promise<WeatherResponse> => {
   const todayStr = new Date().toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
   try {
-    // Enhanced Prompt: Uses Google Search to find real data
+    // Enhanced Prompt: Target detailed tables specifically for Cloud Cover
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: `
-        Task: Get the precise hourly weather forecast for **Agra, Uttar Pradesh, India** for today (${todayStr}).
+        Task: Retrieve the COMPLETE hourly weather telemetry for **Agra, Uttar Pradesh, India** for today (${todayStr}).
         
-        Use Google Search to find a reliable hourly forecast (e.g., from Weather.com, AccuWeather, IMD, or Skymet).
+        **SEARCH ACTION**:
+        Search specifically for: "Agra hourly weather forecast cloud cover meteoblue timeanddate weather.com".
         
-        Specifically look for:
-        1. **Hourly Temperature** (°C)
-        2. **Hourly Cloud Cover** (%). 
-           *CRITICAL*: If specific % is not listed, map descriptions to these values:
-           - Sunny/Clear: 0-5%
-           - Mostly Sunny: 10-25%
-           - Partly Cloudy: 30-50%
-           - Mostly Cloudy: 60-80%
-           - Overcast: 90-100%
-           *Do not return a flat 0% array unless the forecast explicitly says "Clear" for all 24 hours.*
-        3. **Hourly Humidity** (%)
+        **DATA EXTRACTION (24 Hour Resolution Required):**
+        1. **Temperature (°C)**: Extract the hourly temperature trend.
+        2. **Cloud Cover (%)**: **CRITICAL**
+           - Find the specific "% Cloud Cover" or "Sky Cover" column in hourly tables.
+           - Sources like Meteoblue or TimeAndDate often have this.
+           - If explicit % is missing, you MUST map text to: Clear=0%, Sunny=5%, Partly Cloudy=40%, Mostly Cloudy=75%, Overcast=100%.
+           - **DO NOT return a flat 0% array** unless it is truly a perfectly clear day.
+        3. **Humidity (%)**: Extract hourly humidity.
+        4. **Sunrise/Sunset**: Precise times for today in Agra.
 
-        Return a JSON object with exactly 24 data points for each (00:00 to 23:00).
+        **OUTPUT**:
+        Return a single JSON object with arrays of length 24 (one for each hour 00:00-23:00).
       `,
       config: {
         tools: [{ googleSearch: {} }], // Enable Search Tool
@@ -221,7 +221,7 @@ export const fetchHourlyWeather = async (): Promise<WeatherResponse> => {
             hourlyCloud: { type: Type.ARRAY, items: { type: Type.NUMBER } },
             sunriseHour: { type: Type.NUMBER, description: "Decimal hour (e.g. 6.7)" },
             sunsetHour: { type: Type.NUMBER, description: "Decimal hour (e.g. 18.2)" },
-            sourceName: { type: Type.STRING, description: "The specific website or source found (e.g. 'Weather.com via Google')" }
+            sourceName: { type: Type.STRING, description: "The specific website or source found (e.g. 'Meteoblue', 'Weather.com')" }
           },
           required: ["hourlyTemp", "hourlyHumidity", "hourlyCloud", "sunriseHour", "sunsetHour", "sourceName"]
         }
@@ -248,7 +248,7 @@ export const fetchHourlyWeather = async (): Promise<WeatherResponse> => {
            sunsetHour: data.sunsetHour,
            meta: {
              date: todayStr,
-             source: source.substring(0, 25), // Truncate for UI
+             source: source.substring(0, 30), 
              lastUpdated: new Date().toLocaleTimeString(),
              isFallback: false
            }
