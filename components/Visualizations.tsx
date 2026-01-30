@@ -29,6 +29,7 @@ const Visualizations: React.FC<Props> = ({ data, audit }) => {
     accent: '#059669',  // Emerald
     danger: '#dc2626',  // Red
     warning: '#d97706', // Amber
+    battery: '#7c3aed', // Violet
     slate: '#64748b',   // Slate 500
     grid: '#e2e8f0',    // Slate 200
     text: '#64748b',    // Slate 500
@@ -123,6 +124,7 @@ const Visualizations: React.FC<Props> = ({ data, audit }) => {
              <div className="flex gap-4 text-[9px] uppercase font-mono font-bold text-brand-text-dim">
                 <div className="flex items-center gap-1.5"><span className="w-2 h-2 bg-brand-warning rounded-full"></span> GEN</div>
                 <div className="flex items-center gap-1.5"><span className="w-2 h-2 bg-slate-800 rounded-full"></span> LOAD</div>
+                <div className="flex items-center gap-1.5"><span className="w-2 h-2" style={{backgroundColor: COLORS.battery}}></span> BATT</div>
              </div>
           </div>
           <div className="h-[300px] w-full flex-grow">
@@ -137,6 +139,7 @@ const Visualizations: React.FC<Props> = ({ data, audit }) => {
                 />
                 <Legend verticalAlign="top" align="right" height={30} iconType="circle" iconSize={8} wrapperStyle={{fontSize: '10px', textTransform: 'uppercase', fontFamily: 'JetBrains Mono', fontWeight: 700, opacity: 0.6, paddingBottom: '10px'}}/>
                 <Area yAxisId="power" type="monotone" dataKey="solarMW" fill={COLORS.warning} stroke={COLORS.warning} fillOpacity={0.15} name="SOLAR" strokeWidth={2} />
+                <Area yAxisId="power" type="monotone" dataKey="batteryFlowMW" fill={COLORS.battery} stroke={COLORS.battery} fillOpacity={0.3} name="BATTERY" strokeWidth={2} />
                 <Line yAxisId="power" type="stepAfter" dataKey="adjustedLoadMW" stroke="#1e293b" strokeWidth={2} dot={false} name="LOAD" strokeDasharray="4 4" opacity={0.8} />
                 <Bar yAxisId="power" dataKey="gridImportMW" stackId="a" fill={COLORS.primary} name="GRID IMPORT" barSize={12} radius={[2, 2, 0, 0]} />
                 <Bar yAxisId="power" dataKey="dieselMW" stackId="a" fill={COLORS.danger} name="AUX GEN" barSize={12} />
