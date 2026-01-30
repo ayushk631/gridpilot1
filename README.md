@@ -1,4 +1,3 @@
-
 # ⚡ GridPilot X-7: Smart Microgrid Optimization Engine
 
 ![Project Status](https://img.shields.io/badge/Status-Prototype-green)
@@ -6,7 +5,7 @@
 ![AI Power](https://img.shields.io/badge/AI-Gemini_Flash-orange)
 ![License](https://img.shields.io/badge/License-MIT-lightgrey)
 
-> **Target Node:** Dayalbagh Educational Institute (DEI), Agra  
+> **Target Node:** Agra  
 > **Mission:** Stress-testing renewable infrastructure against weather anomalies, grid outages, and dynamic market pricing.
 
 ## 📖 Executive Summary
@@ -29,7 +28,7 @@ It answers the critical question: *"Can this campus survive a 48°C heatwave dur
 * Identifies "Critical Stress Hours" and suggests specific **Load Shedding %** to prevent blackouts.
 
 ### 3. ⚡ Grid Scenarios & Stress Testing
-* **Normal Mode:** Grid-tied optimization for cost reduction.
+* **Normal Mode:** Grid-tied operation for cost reduction.
 * **Islanded Mode:** Simulates 100% off-grid operation (Solar + Battery + Diesel only).
 * **Heatwave:** Applies a **1.35x Load Multiplier** to simulate peak HVAC usage.
 * **Grid Blockers:** Allows operators to define specific outage windows (e.g., 12:00 PM - 2:00 PM) to test resilience.
@@ -43,9 +42,7 @@ It answers the critical question: *"Can this campus survive a 48°C heatwave dur
 
 ## ⚙️ Logic & Architecture
 
-The system operates on a **Priority-Based Dispatch Hierarchy**.
-
-
+The system operates on a **Priority-Based Dispatch Hierarchy**:
 
 1.  **Solar & Profit:** If solar is abundant, it powers the load, fills the battery, and **sells the excess** to the grid.
 2.  **Smart Savings:** During peak tariff hours, the system drains the battery to avoid expensive grid imports.
@@ -87,16 +84,6 @@ The system operates on a **Priority-Based Dispatch Hierarchy**.
     ```bash
     npm run dev
     ```
-
----
-
-## 📸 Screenshots
-
-*(Add your interface snapshots here. Example:)*
-
-| Dashboard Interface | Neural Strategist Report |
-|:---:|:---:|
-| ![Dashboard](path/to/dashboard.png) | ![Report](path/to/report.png) |
 
 ---
 
