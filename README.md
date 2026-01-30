@@ -75,9 +75,9 @@ The system operates on a **Priority-Based Dispatch Hierarchy**:
     ```
 
 3.  **Configure Environment Variables**
-    Create a `.env.local` file in the root directory and add your Gemini API key:
+    Create a `.env` file in the root directory and add your Gemini API key:
     ```env
-    VITE_GEMINI_API_KEY=your_actual_api_key_here
+    API_KEY=your_actual_api_key_here
     ```
 
 4.  **Run the Simulation**
@@ -92,4 +92,4 @@ This project is open-source and available under the [MIT License](LICENSE).
 
 ---
 
-**Developed by [Your Name]** *Dept. of Electrical Engineering, Dayalbagh Educational Institute*
+**Developed by Ayush Kushwaha** Electrical Engineering, Dayalbagh Educational Institute*
